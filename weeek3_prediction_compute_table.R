@@ -51,24 +51,27 @@ combine_tables<-function(x,y,z){
   combined_table<-merge(x,y,all=TRUE) %>%
     merge(z,all = TRUE)
   if(ncol(x)==6){
-    combined_table<-combined_table[, list(frequency = sum(frequency), unique(V1),unique(V2),unique(V3),unique(V4)), by = ngram]
+    combined_table<-combined_table[, list(frequency = sum(frequency), V1=unique(V1),V2=unique(V2),V3=unique(V3),V4=unique(V4)), by = ngram]
   }else if(ncol(x)==5){
-    combined_table<-combined_table[, list(frequency = sum(frequency), unique(V1),unique(V2),unique(V3)), by = ngram]
+    combined_table<-combined_table[, list(frequency = sum(frequency), V1=unique(V1),V2=unique(V2),V3=unique(V3)), by = ngram]
+    c("ngram","frequency","V1","V2","V3")
   }else if(ncol(x)==4){
-    combined_table<-combined_table[, list(frequency = sum(frequency), unique(V1),unique(V2)), by = ngram]
+    combined_table<-combined_table[, list(frequency = sum(frequency), V1=unique(V1),V2=unique(V2)), by = ngram]
+    c("ngram","frequency","V1","V2")
   }else if(ncol(x)==3){
-    combined_table<-combined_table[, list(frequency = sum(frequency), unique(V1)), by = ngram]
+    combined_table<-combined_table[, list(frequency = sum(frequency), V1=unique(V1)), by = ngram]
+    c("ngram","frequency","V1")
   }
-  return(combine_table)
+  return(combined_table)
 }
 
-qua_table<-combine_tables(blog_qua_table,news_qua_table,twitter_qua_table)
+system.time(qua_table<-combine_tables(blog_qua_table,news_qua_table,twitter_qua_table))
 
-tri_table<-combine_tables(blog_tri_table,news_tri_table,twitter_tri_table)
+system.time(tri_table<-combine_tables(blog_tri_table,news_tri_table,twitter_tri_table))
 
-bi_table<-combine_tables(blog_bi_table,news_bi_table,twitter_bi_table)
+system.time(bi_table<-combine_tables(blog_bi_table,news_bi_table,twitter_bi_table))
 
-uni_table<-combine_tables(blog_uni_table,news_uni_table,twitter_uni_table)
+system.time(uni_table<-combine_tables(blog_uni_table,news_uni_table,twitter_uni_table))
 
 qua_table<-merge(blog_qua_table,news_qua_table,all=TRUE) %>%
   merge(twitter_qua_table,all = TRUE)
