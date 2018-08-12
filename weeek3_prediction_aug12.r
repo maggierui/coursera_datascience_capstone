@@ -43,19 +43,26 @@ blog_bi_table<-create_ngram_table(data_blog,2)
 blog_uni_table<-create_ngram_table(data_blog,1)
 
 #### Type in a phrase
-typed<-"of"
+typed<-"of the"
 n<-wordcount(typed)
 typed_word<-vector(mode="character",length=n)
 for (i in 1:n)
   typed_word[i]<-word(typed,i)
 
-if (n==1) ##then search bi for matching uni word
-##sqldf("select * from blog_bi_table$V1 where V1 ")
-matching_dt<-blog_bi_table[grep(paste("^",typed_word[1],"$",sep=""),blog_bi_table$V1)] 
-sorted_dt<-matching_dt[order(-frequency)]
-predicted_word<-sorted_dt[1,V2]
+## If n==1 then search bi for matching uni word
+if (n==1) {
+  matching_dt<-blog_bi_table[grep(paste("^",typed_word[1],"$",sep=""),blog_bi_table$V1)] 
+  sorted_dt<-matching_dt[order(-frequency)]
+  predicted_word<-sorted_dt[1,V2]
+}
 
 #if (n=2) then search tri for matching bi words
+if (n==2){
+  ##matching_dt<-blog_tri_table[(grep(paste("^",typed_word[1],"$",sep=""),blog_tri_table$V1))&&grep(paste("^",typed_word[2],"$",sep=""),blog_tri_table$V2)]
+  matching_dt<-blog_tri_table[(V1==typed_word[1])&(V2==typed_word[2])]
+  sorted_dt<-matching_dt[order(-frequency)]
+  predicted_word<-sorted_dt[1,V3]
+}
 #if (n=3) then search qua for matching three words
 #if (n>3) then only take the last 3 words of typed
 
