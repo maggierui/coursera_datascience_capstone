@@ -36,7 +36,7 @@ blog_bi_table<-create_ngram_table(data_blog,2)
 blog_uni_table<-create_ngram_table(data_blog,1)
 
 #### Type in a phrase
-typed<-"one of"
+typed<-"in the middle"
 n<-wordcount(typed)
 typed_word<-vector(mode="character",length=n)
 for (i in 1:n)
@@ -47,10 +47,13 @@ search_bigram<-function(bi_table,uni_table,input){
   matching_dt<-bi_table[V1==input[1]] 
   if(nrow(matching_dt)){
     sorted_dt<-matching_dt[order(-frequency)]
-    predicted_word<-sorted_dt[1,V1]
-  }else 
-    sorted_dt<-uni_table[order(-frequency)]
     predicted_word<-sorted_dt[1,V2]
+    print("used bigram to predict")
+  }else {
+    sorted_dt<-uni_table[order(-frequency)]
+    predicted_word<-sorted_dt[1,V1]
+    print("used unigram to predict")
+  }
   return(predicted_word)
 }
 
@@ -60,11 +63,27 @@ search_trigram<-function(tri_table,bi_table,uni_table,input){
   if(nrow(matching_dt)){
     sorted_dt<-matching_dt[order(-frequency)]
     predicted_word<-sorted_dt[1,V3]
-  }else predicted_word<-search_bigram(bi_table,uni_table,input)
+    print("used trigram to predict")
+  }else {
+    input<-input[-1]
+    predicted_word<-search_bigram(bi_table,uni_table,input)
+  }
   return(predicted_word)
 }
 
-
+#### Function to search in quagram
+search_quagram<-function(qua_table,tri_table,bi_table,uni_table,input){
+  matching_dt<-qua_table[(V1==input[1])&(V2==input[2])&(V3==input[3])]
+  if(nrow(matching_dt)){
+    sorted_dt<-matching_dt[order(-frequency)]
+    predicted_word<-sorted_dt[1,V4]
+    print("used quagram to predict")
+  }else {
+    input<-input[-1]
+    predicted_word<-search_trigram(tri_table,bi_table,uni_table,input)
+  }
+  return(predicted_word)
+}
 
 ## If n==1 then search bi for matching uni word
 if (n==1){
@@ -72,24 +91,18 @@ if (n==1){
   print(predicted)
 }
 
-
-
 #if (n=2) then search tri for matching bi words
 if (n==2){
   predicted<-search_trigram(blog_tri_table,blog_bi_table,blog_uni_table,typed_word)
   print(predicted)
 }
 
-if (n==2){
-  matching_dt<-blog_tri_table[(V1==typed_word[1])&(V2==typed_word[2])]
-  if(nrow(matching_dt)){
-    sorted_dt<-matching_dt[order(-frequency)]
-    predicted_word<-sorted_dt[1,V3]
-  }else print("not found")## search bi fro matching uni word
-  
+#if (n=3) then search qua for matching three words
+if (n==3){
+  predicted<-search_quagram(blog_qua_table,blog_tri_table,blog_bi_table,blog_uni_table,typed_word)
+  print(predicted)
 }
 
-#if (n=3) then search qua for matching three words
 if (n==3){
   matching_dt<-blog_qua_table[(V1==typed_word[1])&(V2==typed_word[2])&(V3==typed_word[3])]
   sorted_dt<-matching_dt[order(-frequency)]
