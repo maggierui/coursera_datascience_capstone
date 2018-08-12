@@ -1,0 +1,362 @@
+---
+title: "Capstone-Getting and Exploring Data"
+author: "Rui Hu"
+date: "8/01/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(progress=FALSE, echo = TRUE,message=FALSE)
+```
+#Introduction
+This is a report about the exploratory analysis of the data sets provided by SwiftKey for the Capstone project of the Coursera Data Science Specialization. In this report, we first download and unzip the data sets from the URL https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip. The entire data sets include four types of languages of English, German, French, and Russian, for three types of .txt files: blog, news, and twitter. For this project, we choose to use the English folder only to exam blogs.txt, news.txt, and twitter.txt.   
+We will then exam the three data sets, for their size, number of lines, total number of unique words, total number of words, and total number of character.   Bar chart and word cloud will be generated for each of them, to exam the most frequent words.   
+Based on the observation of the data sets, we decide to make prediction models separately, for each type of the data sets, just because their features are quite different. We also decide to use sample size of 0.1, limited by computing power that is available.  
+At the end, possible ways to store the ngrams, and to smooth the unobserved words and phrases, are dicussed. A plan to develop the prediciton model and the Shiny app is described as well.   
+
+#Getting data  
+```{r getting_data, cache=TRUE,include=TRUE, results='hide'}
+swiftkey_url<-"https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+setwd("/Users/ruihu/Documents/DataScience/capstone")
+download.file(swiftkey_url, "coursera_swiftkey.zip", method="auto", quiet = FALSE, mode = "w",
+              cacheOK = TRUE,
+              extra = getOption("download.file.extra"))
+unzip("coursera_swiftkey.zip", files = NULL, list = FALSE, overwrite = TRUE,
+      junkpaths = FALSE, exdir = ".", unzip = "internal",
+      setTimes = FALSE)
+
+
+##Read each of the three en_US file and get their sizes, lengths, and word counts.
+
+library(quanteda)
+library(stringi)
+library(readtext)
+setwd("/Users/ruihu/Documents/DataScience/capstone")
+```
+
+#Exploratory Analysis of the Data  
+Read each of the three en_US file and get their sizes, lengths, and word counts.
+```{r read_size, cache=TRUE,results='asis'}
+### Generic function for parallelizing any task (when possible) (Code from http://rstudio-pubs-static.s3.amazonaws.com/169109_dcd8434e77bb43da8cf057971a010a56.html)
+library(doParallel)
+library(R.utils)
+parallelizeTask <- function(task, ...) {
+  # Calculate the number of cores
+  ncores <- detectCores() - 1
+  # Initiate cluster
+  cl <- makeCluster(ncores)
+  registerDoParallel(cl)
+  #print("Starting task")
+  r <- task(...)
+  #print("Task done")
+  stopCluster(cl)
+  r
+}
+
+# Function getting txt files and read them into a named character vector
+txtRead<-function(x){
+  path_name<-getwd()
+  path<-paste(path_name,"/final/en_US/en_US.",x,".txt",sep="")
+  txt_file<-readtext(path,docvarsfrom = "filenames",
+                     docvarnames = c("language", "type"),
+                     dvsep = "[.]", 
+                     encoding = "UTF-8")
+  return(txt_file)
+}
+
+
+blog_raw<-parallelizeTask(txtRead,"blogs")
+news_raw<-parallelizeTask(txtRead,"news")
+twitter_raw<-parallelizeTask(txtRead,"twitter")
+
+textStats <- data.frame('Type' = c("Blog","News","Twitter"),
+                                   "File Size" = sapply(list(blog_raw, news_raw, twitter_raw), function(x){object.size(x$text)}),
+                                   'Lines' = sapply(list(blog_raw, news_raw, twitter_raw), function(x){stringr::str_count(x$text,"\\n")+1}),
+                                   'Total Words' = sapply(list(blog_raw, news_raw, twitter_raw),function(x){sum(ntoken(x$text))}),
+                                   'Total Unique Words'=sapply(list(blog_raw,news_raw,twitter_raw),function(x){ntype(char_tolower(x$text),remove_punct=TRUE)}),
+                                   'Total Chars' = sapply(list(blog_raw, news_raw, twitter_raw), function(x){sum(nchar(x$text))})
+)
+colnames(textStats)<-c("File Type","File Size",'Lines','Total Words','Total Unique Words','Total Chars')
+print(knitr::kable(textStats))
+```
+
+Before we create **train**, **dev**, and **test** dataset, it will be interesting to see each text file's features, such as the top 15 most frequent words, unique words needed to cover 50%,60%,70%,80%,and 90% of all words, etc. So we first creat a corpus for each data file.  
+```{r create_corpus, cache=TRUE,include=TRUE, results='hide'}
+txtCorpus<-function(x){
+  txt_corpus<-corpus(x) # Creating corpus
+  txt_corpus<-corpus_reshape(txt_corpus) #reshape corpus into sentences
+  return(txt_corpus)
+  }
+blog_corpus<-parallelizeTask(txtCorpus,blog_raw) 
+news_corpus<-parallelizeTask(txtCorpus,news_raw)
+twitter_corpus<-parallelizeTask(txtCorpus,twitter_raw)
+
+rm(blog_raw); gc()
+rm(news_raw); gc()
+rm(twitter_raw); gc()
+```
+
+We want to plot the most frequent 15 words for each corpus, so that we can compare them side by side. We also want to make a word cloud for each type of document to visualize the comparison. We also want to know how many unique words are needed for each type of corpus, to cover certain percentage of the total word instances. In order to do so, we create the following functions.
+```{r plotting, cache=TRUE,include=TRUE, results='hide'}
+#### Function: creating unigrams
+library(ggplot2)
+txtDFM_uni<-function(x){
+  txt_dfm<-quanteda::dfm(x,remove = stopwords('english'),remove_punct = TRUE,stem=TRUE,remove_number=TRUE, verbose=TRUE)
+  return(txt_dfm)
+}
+
+#### Function: creating bigrams
+txtDFM_bi<-function(x){
+  txt_dfm<-dfm(x,ngrams=2,remove = stopwords('english'),remove_punct = TRUE,stem=TRUE,remove_number=TRUE, verbose=TRUE)
+  return(txt_dfm)
+}
+
+#### Function: creating bigrams
+txtDFM_tri<-function(x){
+  txt_dfm<-dfm(x,ngrams=3,remove = stopwords('english'),remove_punct = TRUE,stem=TRUE,remove_number=TRUE, verbose=TRUE)
+  return(txt_dfm)
+}
+txtDFM_4grams<-function(x){
+  txt_dfm<-dfm(x,ngrams=4,remove = stopwords('english'),remove_punct = TRUE,stem=TRUE,remove_number=TRUE, verbose=TRUE)
+  return(txt_dfm)
+}
+
+#### Function: ploting bar graph
+freq_bar_plot<-function(x){
+  q<-textstat_frequency(x, n = 15) %>% 
+   ggplot(aes(x = reorder(feature, -rank), y = frequency)) +
+    geom_bar(stat = "identity") + coord_flip() + 
+    labs(x = "", y = "Word Frequency ")
+  print(q)
+}
+
+#### Function: ploting wordcloud
+freq_wordcloud_plot<-function(x){
+  cloud<-textplot_wordcloud(x, max_words=50, random_order = FALSE,
+                     rotation = .25, 
+                     color = RColorBrewer::brewer.pal(8,"Dark2"))
+  cloud
+}
+
+#### Function: Finding number of unique words to cover certain percentage of the entire text
+dfm_coverage<-function(dfm,percentage){
+  sorted_txt_freq_t<-topfeatures(dfm,n=nfeat(dfm))
+  cover<-0
+  for (i in 1:length(sorted_txt_freq_t))
+  {
+    if (cover>=percentage/100){
+      print(paste0("We need ",i, " words in a frequency dictionary to cover ",percentage," percent of the document"))
+      return(i)
+    }
+    cover<-cover+sorted_txt_freq_t[i]/sum(sorted_txt_freq_t)
+  }
+  
+}
+
+#### Now let's plot between the coverage percentage and the total number of unique words. Note: This part of code are inspired by Sergey Sokolov's work at https://rstudio-pubs-static.s3.amazonaws.com/41391_3b6c11a4844e4f98aadde23405df390d.html with modifications
+plot_coverage<-function(dfm){
+  x<-seq(10,90,by=10)
+  y<-c()
+  for (i in x){
+    y[i/10]<-dfm_coverage(dfm,i)
+  }
+  dat<-data.frame(x,y)
+  q<-ggplot(dat,aes(x, y))+
+    geom_line()+
+    labs(x="Percentage Coverage", y="Number of grams Needed", title="Number of grams required to reach the dictionary coverage")+
+  geom_point()+geom_text(aes(label=y),nudge_x=-2,nudge_y=4,color="red")
+  print(q)
+}
+```
+
+### Create unigrams for each corpus
+```{r create_unigram, cache=TRUE,warning=FALSE,message=FALSE,results='hide'}
+blog_dfm_uni<-txtDFM_uni(blog_corpus)
+news_dfm_uni<-txtDFM_uni(news_corpus)
+twitter_dfm_uni<-txtDFM_uni(twitter_corpus)
+```
+
+
+###Visualize the top 15 unique words in each corpus, by creating bar chart.   
+#### Top 15 unique words in bar chart for blog:
+```{r create_Bar1,cache=TRUE,include=TRUE, results='hide'}
+freq_bar_plot(blog_dfm_uni)
+```
+  
+#### Top 15 unique words in bar chart  for news:
+```{r create_Bar2,cache=TRUE,include=TRUE, results='hide'}
+freq_bar_plot(news_dfm_uni)
+```
+  
+#### Top 15 unique words in bar chart for twitter:
+```{r create_Bar3,cache=TRUE,include=TRUE, results='hide'}
+freq_bar_plot(twitter_dfm_uni)
+```
+  
+###Visualize the top 50 unique words in each corpus, by creating word cloud. 
+  
+#### Top 50 words in word cloud for blog
+```{r creat_wordcloud1,cache=TRUE,include=TRUE, results='hide'}
+freq_wordcloud_plot(blog_dfm_uni)
+```
+  
+#### Top 50 words in word cloud for news
+```{r creat_wordcloud2,cache=TRUE,include=TRUE, results='hide'}
+freq_wordcloud_plot(news_dfm_uni)
+```
+  
+#### Top 50 words in word cloud for twitter
+```{r creat_wordcloud3,cache=TRUE,include=TRUE, results='hide'}
+freq_wordcloud_plot(twitter_dfm_uni)
+```
+  
+### A line plot with specific data points is created too, to show the amount of unique words needed, in order to cover certain percentage of all word instances in the corpus.  
+  
+#### Line plot with specific data points to cover certain percentage of words for blog
+```{r create_wordcoverage1,cache=TRUE,include=TRUE, results='hide'}
+blog_uni_coverage<-plot_coverage(blog_dfm_uni)
+```
+  
+#### Line plot with specific data points to cover certain percentage of words for news
+```{r create_wordcoverage2,cache=TRUE,include=TRUE, results='hide'}
+news_uni_coverage<-plot_coverage(news_dfm_uni)
+```
+  
+#### Line plot with specific data points to cover certain percentage of words for twitter
+```{r create_wordcoverage3,cache=TRUE,include=TRUE, results='hide'}
+twitter_uni_coverage<-plot_coverage(twitter_dfm_uni)
+```
+  
+#Modeling
+ From the bar graphs and word clouds created above for blog, news, and twitter, it is found that each type of texts has different language styles, and hence different frequence of words. For example, the most frequent used in blog is the word **one**, whereas for news is **said**, and for twitter is **just**.  Therefore, it makes more sense to build models based on the type of the texts. We first, sample corpus from each of the three files , with the sample size of 30% from each document of blog, news, and twitter. 
+```{r create_sample,cache=TRUE,include=TRUE, results='hide'}
+txtCorSample<-function(x,y){
+  txt_corpus_sample<-corpus_sample(x, size = ndoc(x)*y, replace = FALSE) # Making corpus sample by 30%
+  return(txt_corpus_sample)
+}
+blog_corSample<-txtCorSample(blog_corpus,0.1)
+news_corSample<-txtCorSample(news_corpus,0.1)
+twitter_corSample<-txtCorSample(twitter_corpus,0.1)
+```
+
+According to [Jurafsky & Martin (2014), in their Speech and Language Processing](https://lagunita.stanford.edu/c4x/Engineering/CS-224N/asset/slp4.pdf), it is best to split the texts into three datasets, which are: training, devset, and test set. So we create training set, dev set, and test set for each sample.  We will use train to develop the model, then use test set to test the model. The dev set will serve as an additional unseen set to help test the model. Therefore, we split the sample corpus into train(80%), dev(10%), and test(10%).  
+```{r create_train,cache=TRUE,include=TRUE, results='hide'}
+#### At this point, the memory on my laptop has been taken to full capacity. That's where the following lines of unloading used memory, and the parallelizedTask function come from.
+ rm(blog_corpus)
+ rm(news_corpus)
+ rm(twitter_corpus)
+ rm(blog_dfm_uni)
+ rm(news_dfm_uni)
+ rm(twitter_dfm_uni)
+ rm(blog_uni_coverage)
+ rm(news_uni_coverage)
+ rm(twitter_uni_coverage); gc()
+
+#### Function to create training,dev and test sets
+ create_sets<-function(x){
+   dt_corpus=sort(sample(nrow(x$documents),nrow(x$documents)*0.8))
+   sample_train<-x$documents[dt_corpus,]
+   sample_train_corpus<-corpus(sample_train$texts)
+   sample_rest<-x$documents[-dt_corpus,]
+   dt_corpus=sort(sample(nrow(sample_rest),nrow(sample_rest)*0.5))
+   sample_dev<-sample_rest[dt_corpus,]
+   sample_dev_corpus<-corpus(sample_dev$texts)
+   sample_test<-sample_rest[dt_corpus,]
+   sample_test_corpus<-corpus(sample_test$texts)
+   sample_list<-list(sample_train_corpus,sample_dev_corpus,sample_test_corpus)
+   return(sample_list)
+   }
+blog_sets<-create_sets(blog_corSample)
+news_sets<-create_sets(news_corSample)
+twitter_sets<-create_sets(twitter_corSample)
+```
+
+##Tasks to accomplish
+
+1.  Build basic n-gram model - using the exploratory analysis you performed, build a basic n-gram model for predicting the next word based on the previous 1, 2, or 3 words.
+Therefore, we build 1:4 grams using the sample train set. 
+
+```{r build_ngram,cache=TRUE,include=TRUE, results='hide'}
+#### Function to create ngrams
+create_ngrams<-function(x){
+  sample_dfm_uni<-txtDFM_uni(x)
+  sample_dfm_bi<-txtDFM_bi(x)
+  sample_dfm_tri<-txtDFM_tri(x)
+  sample_dfm_4gram<-parallelizeTask(txtDFM_4grams,x)
+  ngram_list<-list(sample_dfm_uni,sample_dfm_bi,sample_dfm_tri,sample_dfm_4gram)
+  return(ngram_list)
+}
+blog_grams<-create_ngrams(blog_sets[[1]])
+rm(blog_sets)
+news_grams<-create_ngrams(news_sets[[1]])
+rm(news_sets)
+twitter_grams<-create_ngrams(twitter_sets[[1]])
+```
+
+2.  Build a model to handle unseen n-grams - in some cases people will want to type a combination of words that does not appear in the corpora. Build a model to handle cases where a particular n-gram isn't observed.Questions to consider  
+
++ How can you efficiently store an n-gram model (think Markov Chains)?  
+I will use DataTable with two columns, one for the ngram, and one for its frequency. 
+```{r build_datatable,cache=TRUE,include=TRUE, results='hide'}
+library(data.table)
+#### Create functions to do this for ngrams.
+data_ngram<-function(dfm){
+ sorted_gram_freq<-topfeatures(dfm,n=nfeat(dfm))
+ data_n<-data.table(cbind(names(sorted_gram_freq)),sorted_gram_freq)
+ colnames(data_n)<-c("ngram","frequency")
+ return(data_n)
+}
+
+create_data_t<-function(x){
+  dt_list<-list()
+  for (i in 1:4)
+    dt_list[[i]]<-data_ngram(x[[i]])
+  return(dt_list)
+}
+
+data_blog<-create_data_t(blog_grams)
+data_news<-create_data_t(news_grams)
+data_twitter<-create_data_t(twitter_grams)
+```
+
++ How can you use the knowledge about word frequencies to make your model smaller and more efficient?  
+Using `topfeatures` function and the `plot_coverage` function to decide how many unique tokens should be included in each ngram. Using test set to determine which percentage works the best.  I masked the code calling the function in this chunk, but below shows how to evaluate the number of tokens should be included, hence to reduce the number of tokens.
+```{r exam_coverage,cache=TRUE,include=TRUE, results='hide'}
+#### Function visualizing coverage for ngrams 
+ngram_converage<-function(x){
+  for (i in 1:4)
+  sample_ngram_coverage<-plot_coverage(x[[i]])
+}
+##ngram_converage(blog_grams)
+##ngram_converage(news_grams)
+##ngram_converage(twitter_grams)
+```
+
++ How many parameters do you need (i.e. how big is n in your n-gram model)?  
+I will use the test set and the dev set to help determine the optimal `n`.  
+
++ Can you think of simple ways to "smooth" the probabilities (think about giving all n-grams a non-zero probability even if they aren't observed in the data) ?  
+Again, according to [Jurafsky & Martin (2014), in their Speech and Language Processing](https://lagunita.stanford.edu/c4x/Engineering/CS-224N/asset/slp4.pdf), there are a number of approaches to deal with unseen grams and to smooth algorithm, such as **add-1 smoothing**, **add-k smoothing**, **Studpid backoff**, and **Kneser-Ney smoothing**. Among them, the **Kneser-Ney algorithm** is commented as as one of the best performing N-gram smoothing methods. 
+
++ How do you evaluate whether your model is any good?  
+Using the test set and the dev set to test the correlations.   
+
++ How can you use backoff models to estimate the probability of unobserved n-grams?
+To calculate the probability of P(Wn|Wn-3Wn-2Wn-1), if there is no examples of the 4gram Wn-3Wn-2Wn-1Wn, we can then move to calculate the probability of P(Wn|Wn-2Wn-1). Similarly, if we don't have any evidence of the tri-gram Wn|Wn-2Wn-1, then we use the probability of P(Wn|Wn-1). If we don't have evidence of the bi-gram WnWn-1, then we use the probability of the unigram Wn instead. 
+
+# Summary
+This milestone report first explored each of the three documents - blog, news, and twitter, in terms of their document sizes, total number of lines, total number of words, unique words, and total number of characters. The top 15 unique words, as well as the top 50 unique words for each document, were visualized as well, using functions of `freq_bar_plot` and `fre_wordcloud_plot`.
+To save computing time, the bi-gram, tri-grams were not computed for each individual document. Instead, a sample corpus was created, by sampling 30% from blog, news, and twitter. This sample corpus was then split into training set(80%), dev set(10%), and test set(10%) based on [Jurafsky & Martin (2014), in their Speech and Language Processing](https://lagunita.stanford.edu/c4x/Engineering/CS-224N/asset/slp4.pdf).    
+1-4 grams were then created based on the training set and stored in datatables.   
+# Plans for creating a prediction algorithm and Shiny app  
+## Building the Prediction Algorithm  
+1. Given the input (typed texts), build a recursive function to search all the n-grams, starting from the largest. Right now in this milestone project, the largest n = 4. Therefore, the search will be based on three typed in words at most. If the 4grams are not found, then search for tri-grams. If tri-grams not found, then search for bi-grams. If bi-grams not found, then search for unigrams.  
+2. Calculating probabilities for all found n-grams and sort them to find the largest probability. Return the ngram with the largest probability.  
+3. Extract the last word of this returned ngram.  
+To balance between speed and performance. First for each step, the size required to ruan the model and the runtime will be observed and compared. Certain adjustment, such as the number of unique grams, may be used to reduce memory size and runtime. Meanwhile, test set and dev set will be used to test the accuracy of the prediction.   
+
+## Creating the Shiny app  
+1. Initialize the app by preloading the data tables of ngrams.   
+2. Implement the built model
+3. Test with different number of unique ngrams, number of n, sample size, to achieve best peformance between speed and accuracy.   
+
