@@ -31,16 +31,19 @@ create_ngram_table<-function(ngram,n){
 }
 
 #### Creating searchable tables with ngram, the frequency, and each word in the ngram.
+blog_5_table<-create_ngram_table(data_blog,5)
 blog_qua_table<-create_ngram_table(data_blog,4)
 blog_tri_table<-create_ngram_table(data_blog,3)
 blog_bi_table<-create_ngram_table(data_blog,2)
 blog_uni_table<-create_ngram_table(data_blog,1)
 
+news_5_table<-create_ngram_table(data_news,5)
 news_qua_table<-create_ngram_table(data_news,4)
 news_tri_table<-create_ngram_table(data_news,3)
 news_bi_table<-create_ngram_table(data_news,2)
 news_uni_table<-create_ngram_table(data_news,1)
 
+twitter_5_table<-create_ngram_table(data_twitter,5)
 twitter_qua_table<-create_ngram_table(data_twitter,4)
 twitter_tri_table<-create_ngram_table(data_twitter,3)
 twitter_bi_table<-create_ngram_table(data_twitter,2)
@@ -75,6 +78,7 @@ system.time(uni_table<-combine_tables(blog_uni_table,news_uni_table,twitter_uni_
 
 qua_table<-merge(blog_qua_table,news_qua_table,all=TRUE) %>%
   merge(twitter_qua_table,all = TRUE)
+
 combined_head<-combined_head[, list(frequency = sum(frequency), unique(V1),unique(V2),unique(V3),unique(V4)), by = ngram]
 
   combined_head<-merge(news_head,news_qua_table,all=TRUE) %>%
